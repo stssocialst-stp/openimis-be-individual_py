@@ -1,6 +1,8 @@
 import os
 from django.conf import settings
-from django.db import models
+from django.db import models, transaction
+from django.db.models.signals import post_save
+from django.dispatch import receiver
 from django.utils.translation import gettext_lazy as _
 
 import core
@@ -8,6 +10,7 @@ from core.models import HistoryModel
 from graphql import ResolveInfo
 from location.models import Location, LocationManager
 from individual.apps import IndividualConfig
+
 
 
 class Individual(HistoryModel):
@@ -46,10 +49,10 @@ class Individual(HistoryModel):
             user_districts_match_individual = LocationManager().build_user_location_filter_query(
                 user._u
             )
-            individual_has_group = models.Q(("groupindividual__group__isnull", False))
+            individual_has_group = models.Q(("groupindividuals__group__isnull", False))
             user_districts_match_individual_group = LocationManager().build_user_location_filter_query(
                 user._u,
-                prefix='groupindividual__group__location'
+                prefix='groupindividuals__group__location'
             )
             return queryset.filter(
                 models.Q(
@@ -142,6 +145,16 @@ class Group(HistoryModel):
             )
         return queryset
 
+@receiver(post_save, sender=Group)
+def update_member_individuals_location(sender, instance, **kwargs):
+    with transaction.atomic():
+        # has to save one-by-one instead of bulk update due to track history
+        for individual in Individual.objects.filter(groupindividuals__group=instance):
+            # only update individual location if group location is present,
+            # because individuals import would create a group with empty locaiton which then takes on the location of the head
+            if instance.location_id and individual.location_id != instance.location_id:
+                individual.location_id=instance.location_id
+                individual.save(user=instance.user_updated)
 
 class GroupDataSource(HistoryModel):
     group = models.ForeignKey(Group, models.DO_NOTHING, blank=True, null=True)
@@ -159,13 +172,27 @@ class GroupIndividual(HistoryModel):
         GRANDMOTHER = 'GRANDMOTHER', _('GRANDMOTHER')
         MOTHER = 'MOTHER', _('MOTHER')
         FATHER = 'FATHER', _('FATHER')
+        GRANDSON = 'GRANDSON', _('GRANDSON')
+        GRANDDAUGHTER = 'GRANDDAUGHTER', _('GRANDDAUGHTER')
+        SISTER = 'SISTER', _('SISTER')
+        BROTHER = 'BROTHER', _('BROTHER')
+        OTHER_RELATIVE = 'OTHER RELATIVE', _('OTHER RELATIVE')
+        NOT_RELATED = 'NOT RELATED', _('NOT RELATED')
 
     class RecipientType(models.TextChoices):
         PRIMARY = 'PRIMARY', _('PRIMARY')
         SECONDARY = 'SECONDARY', _('SECONDARY')
 
-    group = models.ForeignKey(Group, models.DO_NOTHING)
-    individual = models.ForeignKey(Individual, models.DO_NOTHING)
+    group = models.ForeignKey(
+        Group,
+        models.DO_NOTHING,
+        related_name='groupindividuals'
+    )
+    individual = models.ForeignKey(
+        Individual,
+        models.DO_NOTHING,
+        related_name='groupindividuals'
+    )
     role = models.CharField(max_length=255, choices=Role.choices, null=True, blank=True)
     recipient_type = models.CharField(max_length=255, choices=RecipientType.choices, null=True, blank=True)
 
@@ -182,6 +209,7 @@ class GroupIndividual(HistoryModel):
         service.handle_head_change(self.id, self.role, self.group_id)
         service.handle_primary_recipient_change(self.id, self.recipient_type, self.group_id)
         service.handle_assure_primary_recipient_in_group(self.group, self.recipient_type)
+        service.ensure_location_consistent(self.group, self.individual, self.role)
         service.update_json_ext_for_group(self.group)
 
     def delete(self, *args, **kwargs):

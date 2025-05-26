@@ -11,6 +11,7 @@ from django.db.models import Q, OuterRef, Subquery
 from core.custom_filters import CustomFilterWizardStorage
 from core.gql.export_mixin import ExportableQueryMixin
 from core.schema import OrderedDjangoFilterConnectionField
+from core.services import wait_for_mutation
 from core.utils import append_validity_filter, is_valid_uuid
 from individual.apps import IndividualConfig
 from individual.gql_mutations import CreateIndividualMutation, UpdateIndividualMutation, DeleteIndividualMutation, \
@@ -26,6 +27,7 @@ from individual.gql_queries import IndividualGQLType, IndividualHistoryGQLType, 
     GroupSummaryEnrollmentGQLType, GroupDataSourceGQLType
 from individual.models import Individual, IndividualDataSource, Group, \
     GroupIndividual, IndividualDataSourceUpload, IndividualDataUploadRecords, GroupDataSource
+from location.apps import LocationConfig
 
 
 def patch_details(data_df: pd.DataFrame):
@@ -55,7 +57,7 @@ class Query(ExportableQueryMixin, graphene.ObjectType):
     module_name = "individual"
     object_type = "Individual"
     object_type_group = "Group"
-    related_field_individual = "groupindividual__individual"
+    related_field_individual = "groupindividuals__individual"
 
     individual = OrderedDjangoFilterConnectionField(
         IndividualGQLType,
@@ -76,6 +78,8 @@ class Query(ExportableQueryMixin, graphene.ObjectType):
         benefitPlanToEnroll=graphene.String(),
         benefitPlanId=graphene.String(),
         filterNotAttachedToGroup=graphene.Boolean(),
+        parent_location=graphene.String(),
+        parent_location_level=graphene.Int(),
     )
 
     individual_history = OrderedDjangoFilterConnectionField(
@@ -126,7 +130,9 @@ class Query(ExportableQueryMixin, graphene.ObjectType):
         isIdProblem=graphene.Boolean(),
         hasChild=graphene.Boolean(),
         customFilters=graphene.List(of_type=graphene.String),
-        benefitPlanToEnroll=graphene.String()
+        benefitPlanToEnroll=graphene.String(),
+        parent_location=graphene.String(),
+        parent_location_level=graphene.Int(),
     )
 
     group_history = OrderedDjangoFilterConnectionField(
@@ -183,11 +189,12 @@ class Query(ExportableQueryMixin, graphene.ObjectType):
 
         client_mutation_id = kwargs.get("client_mutation_id")
         if client_mutation_id:
+            wait_for_mutation(client_mutation_id)
             filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
 
         group_id = kwargs.get("groupId")
         if group_id:
-            filters.append(Q(groupindividual__group__id=group_id))
+            filters.append(Q(groupindividuals__group__id=group_id))
 
         benefit_plan_to_enroll = kwargs.get("benefitPlanToEnroll")
         if benefit_plan_to_enroll:
@@ -205,9 +212,13 @@ class Query(ExportableQueryMixin, graphene.ObjectType):
 
         filter_not_attached_to_group = kwargs.get("filterNotAttachedToGroup")
         if filter_not_attached_to_group:
-            subquery = GroupIndividual.objects.filter(individual=OuterRef('pk')).values('individual')
+            subquery = GroupIndividual.objects.filter(
+                individual=OuterRef('pk')
+            ).exclude(
+                is_deleted=True
+            ).values('individual')
             filters.append(~Q(pk__in=Subquery(subquery)))
- 
+
         has_id_photo = kwargs.get("hasIdPhoto", None)
         if has_id_photo is not None:
             filters.append(Q(photos__isnull=not (has_id_photo)))
@@ -220,6 +231,16 @@ class Query(ExportableQueryMixin, graphene.ObjectType):
         if is_child:
             today = date.today()
             filters.append(Q(dob__gte=today - timedelta(days=365.25*18)))
+
+        parent_location = kwargs.get('parent_location')
+        parent_location_level = kwargs.get('parent_location_level')
+        if parent_location is not None and parent_location_level is not None:
+            filters.append(Query._get_location_filters(parent_location, parent_location_level))
+
+        parent_location = kwargs.get('parent_location')
+        parent_location_level = kwargs.get('parent_location_level')
+        if parent_location is not None and parent_location_level is not None:
+            filters.append(Query._get_location_filters(parent_location, parent_location_level))
 
         query = IndividualGQLType.get_queryset(None, info)
         query = query.filter(*filters).distinct()
@@ -286,7 +307,11 @@ class Query(ExportableQueryMixin, graphene.ObjectType):
     def resolve_individual_enrollment_summary(self, info, **kwargs):
         Query._check_permissions(info.context.user,
                                  IndividualConfig.gql_individual_search_perms)
-        subquery = GroupIndividual.objects.filter(individual=OuterRef('pk')).values('individual')
+        subquery = GroupIndividual.objects.filter(
+            individual=OuterRef('pk')
+        ).exclude(
+            is_deleted=True
+        ).values('individual')
         query = Individual.objects.filter(is_deleted=False)
         custom_filters = kwargs.get("customFilters", None)
         benefit_plan_id = kwargs.get("benefitPlanId", None)
@@ -328,6 +353,7 @@ class Query(ExportableQueryMixin, graphene.ObjectType):
 
         client_mutation_id = kwargs.get("client_mutation_id")
         if client_mutation_id:
+            wait_for_mutation(client_mutation_id)
             filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
 
         Query._check_permissions(info.context.user,
@@ -340,6 +366,7 @@ class Query(ExportableQueryMixin, graphene.ObjectType):
 
         client_mutation_id = kwargs.get("client_mutation_id")
         if client_mutation_id:
+            wait_for_mutation(client_mutation_id)
             filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
 
         Query._check_permissions(info.context.user,
@@ -352,6 +379,7 @@ class Query(ExportableQueryMixin, graphene.ObjectType):
 
         client_mutation_id = kwargs.get("client_mutation_id")
         if client_mutation_id:
+            wait_for_mutation(client_mutation_id)
             filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
 
         Query._check_permissions(info.context.user,
@@ -364,6 +392,7 @@ class Query(ExportableQueryMixin, graphene.ObjectType):
 
         client_mutation_id = kwargs.get("client_mutation_id")
         if client_mutation_id:
+            wait_for_mutation(client_mutation_id)
             filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
 
         Query._check_permissions(info.context.user,
@@ -379,15 +408,16 @@ class Query(ExportableQueryMixin, graphene.ObjectType):
         filters = append_validity_filter(**kwargs)
         client_mutation_id = kwargs.get("client_mutation_id", None)
         if client_mutation_id:
+            wait_for_mutation(client_mutation_id)
             filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
 
         first_name = kwargs.get("first_name", None)
         if first_name:
-            filters.append(Q(groupindividual__individual__first_name__icontains=first_name))
+            filters.append(Q(groupindividuals__individual__first_name__icontains=first_name))
 
         last_name = kwargs.get("last_name", None)
         if last_name:
-            filters.append(Q(groupindividual__individual__last_name__icontains=last_name))
+            filters.append(Q(groupindividuals__individual__last_name__icontains=last_name))
 
         benefit_plan_to_enroll = kwargs.get("benefitPlanToEnroll")
         if benefit_plan_to_enroll:
@@ -396,57 +426,62 @@ class Query(ExportableQueryMixin, graphene.ObjectType):
                 ~Q(groupbeneficiary__benefit_plan_id=benefit_plan_to_enroll)
             )
 
+        parent_location = kwargs.get('parent_location')
+        parent_location_level = kwargs.get('parent_location_level')
+        if parent_location is not None and parent_location_level is not None:
+            filters.append(Query._get_location_filters(parent_location, parent_location_level))
+
         fullname = kwargs.get("fullname", None)
         if fullname:
             filters.append(
-                Q(groupindividual__role=GroupIndividual.Role.HEAD) &
-                Q(groupindividual__individual__json_ext__has_key=constants._full_name_field) &  # Check if the key exists
+                Q(groupindividuals__role=GroupIndividual.Role.HEAD) &
+                Q(groupindividuals__individual__json_ext__has_key=constants._full_name_field) &  # Check if the key exists
                 Q(**{
-                    f'groupindividual__individual__json_ext__{constants._full_name_field}__icontains': fullname
+                    f'groupindividuals__individual__json_ext__{constants._full_name_field}__icontains': fullname
                 })
             )
 
         nickname = kwargs.get("nickname", None)
         if nickname:
             filters.append(
-                Q(groupindividual__role=GroupIndividual.Role.HEAD) &
-                Q(groupindividual__individual__json_ext__has_key=constants._nickname_field) &  # Check if the key exists
+                Q(groupindividuals__role=GroupIndividual.Role.HEAD) &
+                Q(groupindividuals__individual__json_ext__has_key=constants._nickname_field) &  # Check if the key exists
                 Q(**{
-                    f'groupindividual__individual__json_ext__{constants._nickname_field}__icontains': nickname
+                    f'groupindividuals__individual__json_ext__{constants._nickname_field}__icontains': nickname
                 })
             )
 
         district = kwargs.get("district", None)
         if district:
             filters.append(
-                Q(groupindividual__role=GroupIndividual.Role.HEAD) &
-                Q(groupindividual__individual__json_ext__has_key=constants._district_field) &  # Check if the key exists
+                Q(groupindividuals__role=GroupIndividual.Role.HEAD) &
+                Q(groupindividuals__individual__json_ext__has_key=constants._district_field) &  # Check if the key exists
                 Q(**{
-                    f'groupindividual__individual__json_ext__{constants._district_field}__icontains': district
+                    f'groupindividuals__individual__json_ext__{constants._district_field}__icontains': district
                 })
             )
 
         sub_district = kwargs.get("sub_district", None)
         if sub_district:
             filters.append(
-                Q(groupindividual__role=GroupIndividual.Role.HEAD) &
-                Q(groupindividual__individual__json_ext__has_key=constants._sub_district_field) &  # Check if the key exists
+                Q(groupindividuals__role=GroupIndividual.Role.HEAD) &
+                Q(groupindividuals__individual__json_ext__has_key=constants._sub_district_field) &  # Check if the key exists
                 Q(**{
-                    f'groupindividual__individual__json_ext__{constants._sub_district_field}__icontains': sub_district
+                    f'groupindividuals__individual__json_ext__{constants._sub_district_field}__icontains': sub_district
                 })
             )
 
         individual_id = kwargs.get("individual_id", None)
         if individual_id:
-            filters.append(Q(groupindividual__individual__id=individual_id))
+            filters.append(Q(groupindividuals__individual__id=individual_id))
 
         sex = kwargs.get("sex", None)
         if sex:
             filters.append(
-                Q(groupindividual__role=GroupIndividual.Role.HEAD) &
-                Q(groupindividual__individual__json_ext__has_key=constants._sex_field) &  # Check if the key exists
+                Q(groupindividuals__role=GroupIndividual.Role.HEAD) &
+                Q(groupindividuals__individual__json_ext__has_key=constants._sex_field) &  # Check if the key exists
                 Q(**{
-                    f'groupindividual__individual__json_ext__{constants._sex_field}__iexact': sex
+                    f'groupindividuals__individual__json_ext__{constants._sex_field}__iexact': sex
                 })
             )
 
@@ -458,7 +493,7 @@ class Query(ExportableQueryMixin, graphene.ObjectType):
 
             # Add a filter to find groups with at least one child (<= 18 years old)
             filters.append(
-                Q(groupindividual__individual__dob__gte=eighteen_years_ago)
+                Q(groupindividuals__individual__dob__gte=eighteen_years_ago)
             )
 
         query = GroupGQLType.get_queryset(None, info)
@@ -495,6 +530,7 @@ class Query(ExportableQueryMixin, graphene.ObjectType):
 
         client_mutation_id = kwargs.get("client_mutation_id")
         if client_mutation_id:
+            wait_for_mutation(client_mutation_id)
             filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
 
         json_ext_head_icontains = kwargs.get("json_ext_head__icontains")
@@ -520,6 +556,7 @@ class Query(ExportableQueryMixin, graphene.ObjectType):
 
         client_mutation_id = kwargs.get("client_mutation_id", None)
         if client_mutation_id:
+            wait_for_mutation(client_mutation_id)
             filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
 
         query = GroupIndividual.objects.filter(*filters)
@@ -537,6 +574,7 @@ class Query(ExportableQueryMixin, graphene.ObjectType):
 
         client_mutation_id = kwargs.get("client_mutation_id", None)
         if client_mutation_id:
+            wait_for_mutation(client_mutation_id)
             filters.append(Q(mutations__mutation__client_mutation_id=client_mutation_id))
 
         Query._check_permissions(
@@ -595,6 +633,14 @@ class Query(ExportableQueryMixin, graphene.ObjectType):
     def _check_permissions(user, perms):
         if type(user) is AnonymousUser or not user.id or not user.has_perms(perms):
             raise PermissionError("Unauthorized")
+
+    @staticmethod
+    def _get_location_filters(parent_location, parent_location_level):
+        query_key = "uuid"
+        for i in range(len(LocationConfig.location_types) - parent_location_level - 1):
+            query_key = "parent__" + query_key
+        query_key = "location__" + query_key
+        return Q(**{query_key: parent_location})
 
 
 class Mutation(graphene.ObjectType):

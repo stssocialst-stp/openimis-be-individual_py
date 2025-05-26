@@ -83,11 +83,11 @@ class IndividualGQLType(DjangoObjectType):
             "first_name": ["iexact", "istartswith", "icontains"],
             "last_name": ["iexact", "istartswith", "icontains"],
             "dob": ["exact", "lt", "lte", "gt", "gte"],
-
             "date_created": ["exact", "lt", "lte", "gt", "gte"],
             "date_updated": ["exact", "lt", "lte", "gt", "gte"],
             "is_deleted": ["exact"],
             "version": ["exact"],
+            "location": ["isnull"],
 
             **prefix_filterset("photos__", IndividualPhotoGQLType._meta.filter_fields),
         }
@@ -113,7 +113,6 @@ class IndividualHistoryGQLType(DjangoObjectType):
             "first_name": ["iexact", "istartswith", "icontains"],
             "last_name": ["iexact", "istartswith", "icontains"],
             "dob": ["exact", "lt", "lte", "gt", "gte"],
-
             "date_created": ["exact", "lt", "lte", "gt", "gte"],
             "date_updated": ["exact", "lt", "lte", "gt", "gte"],
             "is_deleted": ["exact"],
@@ -141,7 +140,6 @@ class IndividualDataSourceUploadGQLType(DjangoObjectType):
             "status": ["iexact", "istartswith", "icontains"],
             "source_type": ["iexact", "istartswith", "icontains"],
             "source_name": ["iexact", "istartswith", "icontains"],
-
             "date_created": ["exact", "lt", "lte", "gt", "gte"],
             "date_updated": ["exact", "lt", "lte", "gt", "gte"],
             "is_deleted": ["exact"],
@@ -158,7 +156,6 @@ class IndividualDataSourceGQLType(DjangoObjectType):
         interfaces = (graphene.relay.Node,)
         filter_fields = {
             "id": ["exact", "isnull"],
-
             "date_created": ["exact", "lt", "lte", "gt", "gte"],
             "date_updated": ["exact", "lt", "lte", "gt", "gte"],
             "is_deleted": ["exact"],
@@ -175,9 +172,9 @@ class GroupGQLType(DjangoObjectType):
 
     def resolve_head(self, info):
         return Individual.objects.filter(
-            groupindividual__group__id=self.id,
-            groupindividual__role=GroupIndividual.Role.HEAD,
-            groupindividual__is_deleted=False,
+            groupindividuals__group__id=self.id,
+            groupindividuals__role=GroupIndividual.Role.HEAD,
+            groupindividuals__is_deleted=False,
         ).first()
 
     class Meta:
@@ -190,6 +187,7 @@ class GroupGQLType(DjangoObjectType):
             "date_updated": ["exact", "lt", "lte", "gt", "gte"],
             "is_deleted": ["exact"],
             "version": ["exact"],
+            "location": ["isnull"],
         }
         connection_class = ExtendedConnection
 
@@ -205,9 +203,9 @@ class GroupHistoryGQLType(DjangoObjectType):
 
     def resolve_head(self, info):
         return Individual.objects.filter(
-            groupindividual__group__id=self.id,
-            groupindividual__role=GroupIndividual.Role.HEAD,
-            groupindividual__is_deleted=False,
+            groupindividuals__group__id=self.id,
+            groupindividuals__role=GroupIndividual.Role.HEAD,
+            groupindividuals__is_deleted=False,
         ).first()
 
     def resolve_user_updated(self, info):
@@ -315,7 +313,6 @@ class GroupDataSourceGQLType(DjangoObjectType):
         interfaces = (graphene.relay.Node,)
         filter_fields = {
             "id": ["exact", "isnull"],
-
             "date_created": ["exact", "lt", "lte", "gt", "gte"],
             "date_updated": ["exact", "lt", "lte", "gt", "gte"],
             "is_deleted": ["exact"],

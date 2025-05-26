@@ -1,9 +1,14 @@
 import json
+from individual.apps import IndividualConfig
+from individual.models import Individual
 from individual.tests.test_helpers import (
     create_individual,
     IndividualGQLTestCase,
 )
+from tasks_management.models import Task
+from django.contrib.contenttypes.models import ContentType
 from django.utils.translation import gettext as _
+from unittest.mock import patch
 
 
 class IndividualGQLMutationTest(IndividualGQLTestCase):
@@ -213,6 +218,114 @@ class IndividualGQLMutationTest(IndividualGQLTestCase):
         content = json.loads(response.content)
         id = content['data']['updateIndividual']['internalId']
         self.assert_mutation_success(id)
+
+    @patch.object(IndividualConfig, 'check_individual_update', False)
+    def test_update_individual_json_ext_consistent(self):
+        individual = create_individual(self.admin_user.username)
+        query_str = f'''
+            mutation {{
+              updateIndividual(
+                input: {{
+                  id: "{individual.id}"
+                  firstName: "Bob"
+                  lastName: "Foo"
+                  dob: "2020-02-19"
+                  locationId: {self.village_a.id}
+                  jsonExt: "{{ \\"first_name\\": \\"Ryan\\", \\"last_name\\": \\"Alexander\\", \\"dob\\": \\"2019-07-17\\", \\"location_id\\": 666}}"
+                }}
+              ) {{
+                clientMutationId
+                internalId
+              }}
+            }}
+        '''
+
+        response = self.query(
+            query_str,
+            headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"}
+        )
+        content = json.loads(response.content)
+        id = content['data']['updateIndividual']['internalId']
+        self.assert_mutation_success(id)
+
+        updated_individual = Individual.objects.get(id=individual.id)
+
+        # Check that individual attributes updated
+        self.assertEqual(updated_individual.first_name, 'Bob')
+        self.assertEqual(updated_individual.last_name, 'Foo')
+        self.assertEqual(str(updated_individual.dob), '2020-02-19')
+
+        # Check that json_ext values updated, input field takes precedence as jsonExt can be outdated
+        self.assertEqual(updated_individual.json_ext['first_name'], 'Bob')
+        self.assertEqual(updated_individual.json_ext['last_name'], 'Foo')
+        self.assertEqual(updated_individual.json_ext['dob'], '2020-02-19')
+
+        # Check that location fields are updated
+        self.assertEqual(updated_individual.location_id, self.village_a.id)
+        self.assertEqual(updated_individual.json_ext['location_id'], self.village_a.id)
+        self.assertEqual(
+            updated_individual.json_ext['location_str'],
+            f'{self.village_a.code} {self.village_a.name}'
+        )
+
+    @patch.object(IndividualConfig, 'check_individual_update', True)
+    def test_update_individual_with_checker_logic_json_ext_consistent(self):
+        individual = create_individual(self.admin_user.username)
+        query_str = f'''
+            mutation {{
+              updateIndividual(
+                input: {{
+                  id: "{individual.id}"
+                  firstName: "Bob"
+                  lastName: "Foo"
+                  dob: "2020-02-19"
+                  locationId: {self.village_a.id}
+                  jsonExt: "{{ \\"first_name\\": \\"Ryan\\", \\"last_name\\": \\"Alexander\\", \\"dob\\": \\"2019-07-17\\", \\"location_id\\": 666}}"
+                }}
+              ) {{
+                clientMutationId
+                internalId
+              }}
+            }}
+        '''
+
+        response = self.query(
+            query_str,
+            headers={"HTTP_AUTHORIZATION": f"Bearer {self.admin_token}"}
+        )
+        content = json.loads(response.content)
+        id = content['data']['updateIndividual']['internalId']
+        self.assert_mutation_success(id)
+
+        individual_from_db = Individual.objects.get(id=individual.id)
+
+        # Check that individual attributes not yet updated
+        self.assertNotEqual(individual_from_db.first_name, 'Bob')
+        self.assertNotEqual(individual_from_db.last_name, 'Foo')
+        self.assertNotEqual(str(individual_from_db.dob), '2020-02-19')
+
+        # Check that an update task is created
+        task_query = Task.objects.filter(
+            entity_type=ContentType.objects.get_for_model(Individual),
+            entity_id=individual.id,
+            business_event='IndividualService.update',
+        )
+        self.assertEqual(task_query.count(), 1)
+
+        task = task_query.first()
+        self.assertEqual(task.data['current_data']['first_name'], individual.first_name)
+        self.assertEqual(task.data['current_data']['dob'], str(individual.dob))
+        self.assertEqual(task.data['current_data']['location_id'], individual.location_id)
+        self.assertEqual(task.data['current_data']['json_ext'], individual.json_ext)
+        self.assertEqual(task.data['incoming_data']['first_name'], 'Bob')
+        self.assertEqual(task.data['incoming_data']['dob'], '2020-02-19')
+        self.assertEqual(task.data['incoming_data']['json_ext']['first_name'], 'Bob')
+        self.assertEqual(task.data['incoming_data']['json_ext']['dob'], '2020-02-19')
+        self.assertEqual(task.data['incoming_data']['location_id'], self.village_a.id)
+        self.assertEqual(
+            task.data['incoming_data']['json_ext']['location_str'],
+            f'{self.village_a.code} {self.village_a.name}'
+        )
 
 
     def test_delete_individual_general_permission(self):

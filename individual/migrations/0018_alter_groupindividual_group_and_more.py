@@ -29,16 +29,6 @@ class Migration(migrations.Migration):
                 to="individual.individual",
             ),
         ),
-        migrations.AlterField(
-            model_name='groupindividual',
-            name='group',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.DO_NOTHING, to='individual.group'),
-        ),
-        migrations.AlterField(
-            model_name='groupindividual',
-            name='individual',
-            field=models.ForeignKey(on_delete=django.db.models.deletion.DO_NOTHING, to='individual.individual'),
-        ),
         migrations.AddField(
             model_name="group",
             name="location",

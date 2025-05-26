@@ -1,5 +1,5 @@
 from django.test import TestCase
-
+from unittest.mock import patch
 from individual.models import Individual, GroupIndividual, Group
 from individual.services import GroupIndividualService
 from individual.tests.data import service_add_individual_payload, service_group_individual_payload
@@ -37,18 +37,19 @@ class GroupIndividualServiceTest(TestCase):
         self.assertEqual(query.count(), 1)
 
     def test_add_group_individual_validations(self):
-        result = self.service.create({
-            "individual_id": self.individual1.id,
-        })
-        self.assertFalse(result.get('success'))
-        self.assertEqual(result.get('detail'), f"['{_('individual.validation.check_if_group_id')}']")
+        with patch('core.validation.base.IS_TESTING', False):            
+            result = self.service.create({
+                "individual_id": self.individual1.id,
+            })
+            self.assertFalse(result.get('success'))
+            self.assertEqual(result.get('detail'), f"['{_('individual.validation.check_if_group_id')}']")
 
-        result = self.service.create({
-            "group_id": self.group.id,
-        })
-        self.assertFalse(result.get('success'))
-        self.assertTrue("'individual': ['This field cannot be null.']" in result.get('detail'), result.get('detail'))
-        # Why is individual_id precence not validated like group_id?
+            result = self.service.create({
+                "group_id": self.group.id,
+            })
+            self.assertFalse(result.get('success'))
+            self.assertTrue("'individual': ['This field cannot be null.']" in result.get('detail'), result.get('detail'))
+            # Why is individual_id precence not validated like group_id?
 
     def test_update_group_individual(self):
         result = self.service.create(self.payload)

@@ -4,8 +4,7 @@ from django.conf import settings
 is_unit_test_env = getattr(settings, 'IS_UNIT_TEST_ENV', False)
 
 # Check if the 'opensearch_reports' app is in INSTALLED_APPS
-# Also skip this when running unit tests to avoid connection issues
-if 'opensearch_reports' in apps.app_configs and not is_unit_test_env:
+if 'opensearch_reports' in apps.app_configs:
     from opensearch_reports.service import BaseSyncDocument
     from django_opensearch_dsl import Document, fields as opensearch_fields
     from django_opensearch_dsl.registries import registry
@@ -15,6 +14,9 @@ if 'opensearch_reports' in apps.app_configs and not is_unit_test_env:
         GroupIndividual,
         Group
     )
+
+    # skip indexing on model update when running unit tests to avoid connection issues
+    auto_refresh = not is_unit_test_env
 
     @registry.register_document
     class IndividualDocument(BaseSyncDocument):
@@ -32,7 +34,7 @@ if 'opensearch_reports' in apps.app_configs and not is_unit_test_env:
                 'number_of_shards': 1,
                 'number_of_replicas': 0
             }
-            auto_refresh = True
+            auto_refresh = auto_refresh
 
         class Django:
             model = Individual
@@ -81,7 +83,7 @@ if 'opensearch_reports' in apps.app_configs and not is_unit_test_env:
                 'number_of_shards': 1,
                 'number_of_replicas': 0
             }
-            auto_refresh = True
+            auto_refresh = auto_refresh
 
         class Django:
             model = GroupIndividual
@@ -131,7 +133,7 @@ if 'opensearch_reports' in apps.app_configs and not is_unit_test_env:
                 'number_of_shards': 1,
                 'number_of_replicas': 0
             }
-            auto_refresh = True
+            auto_refresh = auto_refresh
 
         class Django:
             model = IndividualDataSourceUpload
