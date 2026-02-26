@@ -62,11 +62,20 @@ class IndividualGQLType(DjangoObjectType):
     id_front = graphene.Field(IndividualPhotoGQLType)
     id_back = graphene.Field(IndividualPhotoGQLType)
 
+    # Campos extraídos do json_ext
+    sexo = graphene.String()
+    contacto_telefonico = graphene.String()
+    vulgo = graphene.String()
+    num_doc_id = graphene.String()
+    distrito = graphene.String()
+    subdistrito = graphene.String()
+    localidade = graphene.String()
+
     @classmethod
     def _check_photo_permission(cls, info):
         if not info.context.user.has_perms(IndividualConfig.gql_query_individual_photo_perms):
             raise PermissionDenied(_("unauthorized"))
-    
+
     def resolve_id_front(self, info):
         IndividualGQLType._check_photo_permission(info)
         return self.photos.filter(type=IndividualPhoto.Type.ID_FRONT).last()
@@ -74,6 +83,32 @@ class IndividualGQLType(DjangoObjectType):
     def resolve_id_back(self, info):
         IndividualGQLType._check_photo_permission(info)
         return self.photos.filter(type=IndividualPhoto.Type.ID_BACK).last()
+
+    def resolve_sexo(self, info):
+        return (self.json_ext or {}).get('sexo')
+
+    def resolve_contacto_telefonico(self, info):
+        return (self.json_ext or {}).get('contacto_telefonico')
+
+    def resolve_vulgo(self, info):
+        return (self.json_ext or {}).get('vulgo')
+
+    def resolve_num_doc_id(self, info):
+        return (self.json_ext or {}).get('num_doc_id')
+
+    def resolve_distrito(self, info):
+        return (self.json_ext or {}).get('distrito')
+
+    def resolve_subdistrito(self, info):
+        return (self.json_ext or {}).get('subdistrito')
+
+    def resolve_localidade(self, info):
+        json_localidade = (self.json_ext or {}).get('localidade')
+        if json_localidade:
+            return json_localidade
+        if self.location:
+            return self.location.name
+        return None
 
     class Meta:
         model = Individual
