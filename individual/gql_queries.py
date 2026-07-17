@@ -61,6 +61,7 @@ class IndividualGQLType(DjangoObjectType):
     uuid = graphene.String(source='uuid')
     id_front = graphene.Field(IndividualPhotoGQLType)
     id_back = graphene.Field(IndividualPhotoGQLType)
+    nib = graphene.String()
 
     # Campos extraídos do json_ext
     sexo = graphene.String()
@@ -118,6 +119,7 @@ class IndividualGQLType(DjangoObjectType):
             "first_name": ["iexact", "istartswith", "icontains"],
             "last_name": ["iexact", "istartswith", "icontains"],
             "dob": ["exact", "lt", "lte", "gt", "gte"],
+            "nib": ["exact", "icontains", "isnull"],
             "date_created": ["exact", "lt", "lte", "gt", "gte"],
             "date_updated": ["exact", "lt", "lte", "gt", "gte"],
             "is_deleted": ["exact"],

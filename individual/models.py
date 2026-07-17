@@ -17,6 +17,7 @@ class Individual(HistoryModel):
     first_name = models.CharField(max_length=255, null=False)
     last_name = models.CharField(max_length=255, null=False)
     dob = core.fields.DateField(null=False)
+    nib = models.CharField(db_column='NIB', max_length=25, blank=True, null=True)
     #TODO WHY the HistoryModel json_ext was not enough
     json_ext = models.JSONField(db_column="Json_ext", blank=True, default=dict)
 
