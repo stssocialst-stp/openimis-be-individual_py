@@ -138,9 +138,41 @@ class IndividualGQLType(DjangoObjectType):
 class IndividualHistoryGQLType(DjangoObjectType):
     uuid = graphene.String(source='uuid')
     user_updated = graphene.Field(UserGQLType)
+    nib = graphene.String()
+    sexo = graphene.String()
+    contacto_telefonico = graphene.String()
+    vulgo = graphene.String()
+    num_doc_id = graphene.String()
+    distrito = graphene.String()
+    subdistrito = graphene.String()
+    localidade = graphene.String()
 
     def resolve_user_updated(self, info):
         return self.user_updated
+
+    def resolve_nib(self, info):
+        return self.nib
+
+    def resolve_sexo(self, info):
+        return (self.json_ext or {}).get('sexo')
+
+    def resolve_contacto_telefonico(self, info):
+        return (self.json_ext or {}).get('contacto_telefonico')
+
+    def resolve_vulgo(self, info):
+        return (self.json_ext or {}).get('vulgo')
+
+    def resolve_num_doc_id(self, info):
+        return (self.json_ext or {}).get('num_doc_id')
+
+    def resolve_distrito(self, info):
+        return (self.json_ext or {}).get('distrito')
+
+    def resolve_subdistrito(self, info):
+        return (self.json_ext or {}).get('subdistrito')
+
+    def resolve_localidade(self, info):
+        return (self.json_ext or {}).get('localidade')
 
     class Meta:
         model = Individual.history.model
